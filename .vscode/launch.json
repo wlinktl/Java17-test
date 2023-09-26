@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "DynamicProxyExample",
+            "request": "launch",
+            "mainClass": "com.demo.java.DynamicProxyExample",
+            "projectName": "spring-boot-3"
+        },
+        {
+            "type": "java",
+            "name": "CGLibExample",
+            "request": "launch",
+            "mainClass": "com.demo.java.CGLibExample",
+            "vmArgs": "--add-opens java.base/java.lang=ALL-UNNAMED"
+        }
+    ]
+}
