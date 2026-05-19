@@ -8,3 +8,747 @@
     <artifactId>tomcat-embed-jasper</artifactId>
     <scope>provided</scope>
 </dependency>
+
+
+
+Conversation with Gemini
+explain this configuration in web.xml
+
+The configuration shown in image_2e82fb.png is a JNDI (Java Naming and Directory Interface) Resource Reference.
+
+In plain English, this is your web application telling the Tomcat server: "I need a database connection, but I don't want to know the username or password. Please look for a resource named jdbc/test that you have configured and give it to me."
+
+Breakdown of the Tags
+<res-ref-name>jdbc/test</res-ref-name>:
+This is the "logical name" the application uses to find the resource. In your Java code or Spring configuration, you would look up this exact string to get the connection.
+
+<res-type>javax.sql.DataSource</res-type>:
+This defines the expected Java type. Since it is a DataSource, it tells the server that this resource provides database connections.
+
+<res-auth>Container</res-auth>:
+This means the Servlet Container (Tomcat) is responsible for signing into the database. You define the URL, username, and password in Tomcat's context.xml or server.xml files, not inside your code.
+
+<description>:
+A simple comment for developers to know what this resource is for.
+
+How this relates to your "Two DataSources" Error
+This file is likely the reason you are seeing a conflict (NoUniqueBeanDefinitionException) after your upgrade. Here is how the dots connect:
+
+JNDI Bean: When you deploy to Tomcat, Spring often sees this web.xml entry and creates a bean for it (often named dataSource or mapped through a JndiObjectFactoryBean).
+
+Auto-Configured Bean: When you upgraded to Java 17/Spring Boot 2.7+, Spring Boot’s Auto-Configuration probably scanned your application.properties. If it found database properties there, it created a second bean automatically.
+
+The Clash: You now have the JNDI-sourced bean and the Spring-Auto-configured bean. Spring doesn't know which one to use for your @Autowired fields.
+
+Key Differences: Embedded vs. External Tomcat
+Feature	External Tomcat (Your Current Setup)	Embedded Tomcat (Spring Boot)
+Configuration	Uses web.xml and Tomcat's context.xml.	Uses application.properties or Java @Bean.
+Management	Tomcat manages the connection pool.	Spring Boot (HikariCP) manages the pool.
+Lookup	App uses JNDI to "ask" for the connection.	App creates the connection directly.
+Recommendation for Java 17
+If you are moving toward a modern Java 17 / Embedded Tomcat setup, it is usually better to remove this <resource-ref> from web.xml and define your database connection directly in application.properties. This makes the application "portable" so it can run anywhere without needing a pre-configured Tomcat server.
+
+Example application.properties replacement:
+
+Properties
+spring.datasource.url=jdbc:mysql://localhost:3306/mydb
+spring.datasource.username=root
+spring.datasource.password=secret
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+If I use external tomcat, I can still use Spring boot for configuration and don't use web.xml/context.xml for configuration, so I can deploy war file to any tomcat ?
+
+Yes, absolutely. This is the recommended modern way to handle WAR deployments. You can move all your "server-side" configuration (the stuff that used to live in Tomcat's context.xml or your app's web.xml) directly into your Spring Boot code and properties.
+
+By doing this, your WAR becomes a "Self-Contained WAR." You can take that file and drop it into any compatible Tomcat version on any server, and it will run without you having to touch the server's global configuration files.
+
+How to achieve "Zero-Config" Tomcat Deployment
+1. Replace web.xml with SpringBootServletInitializer
+Instead of defining servlets, filters, and listeners in XML, your main class acts as the entry point. When you drop the WAR into an external Tomcat, the server looks for this class to start your Spring context.
+
+Java
+@SpringBootApplication
+public class MyWebApplication extends SpringBootServletInitializer {
+    @Override
+    protected SpringApplicationBuilder configure(SpringApplicationBuilder builder) {
+        return builder.sources(MyWebApplication.class);
+    }
+}
+2. Move Database Config to application.properties
+Since you currently have a <resource-ref> in web.xml (as seen in image_2e82fb.png), you are likely relying on Tomcat to manage the connection pool. To make the WAR portable, you should define the connection yourself.
+
+Delete the <resource-ref> from web.xml and add this to src/main/resources/application.properties:
+
+Properties
+# No more JNDI lookup! The app creates its own pool.
+spring.datasource.url=jdbc:mysql://your-db-server:3306/mydb
+spring.datasource.username=prod_user
+spring.datasource.password=prod_pass
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+
+# Spring Boot uses HikariCP by default (much faster than Tomcat's old pool)
+spring.datasource.hikari.maximum-pool-size=10
+Why this solves your "Double Bean" Error
+In your previous error (image_3951f9.png), you had two beans: dataSource and dataSourceLRR.
+
+The Problem: Tomcat was providing one via JNDI (because of your web.xml), and Spring Boot was trying to create its own.
+
+The Solution: By removing the web.xml entry and the JNDI configuration in Tomcat's context.xml, you eliminate the "ghost" bean. Spring Boot will now only create the one you defined in your properties file.
+
+The Benefits of This Approach
+Feature	Old Way (External Config)	New Way (Spring Boot Config)
+Portability	Must manually edit context.xml on every server.	Just drop the WAR and it works.
+Version Control	Credentials/DB URLs are hidden on the server.	Config is inside your project (use profiles for Dev/Prod).
+Testing	Hard to test locally without a full Tomcat setup.	Can run the same WAR with embedded Tomcat for testing.
+Modernization	Uses legacy javax namespaces.	Ready for jakarta namespaces and Java 17+ features.
+One Critical Note on Java 17
+Since you upgraded to Java 17, ensure your external Tomcat version is compatible:
+
+Java 17 + Spring Boot 2.7.x: Use Tomcat 9.
+
+Java 17 + Spring Boot 3.x: You must use Tomcat 10+ (because of the move from javax.* to jakarta.*).
+
+If you try to deploy a Spring Boot 3 WAR into Tomcat 9, it will fail because the namespaces won't match.
+
+Are you planning to use different database credentials for your local development versus your production Tomcat server?
+
+When use @PropertySource with properties file, application.properties is not used by this configuration?
+
+The short answer is yes, both are used.
+
+Using @PropertySource does not "turn off" the automatic loading of application.properties. Instead, Spring treats properties as a layered stack. It will look through all available sources to find a value for a specific key.
+
+Here is how the hierarchy works and what you need to know to avoid configuration headaches.
+
+1. The "Additive" Nature of Spring
+When you use @PropertySource("classpath:custom.properties"), Spring simply adds those key-value pairs to the existing Environment.
+
+application.properties: Loaded automatically by Spring Boot's internal magic.
+
+custom.properties: Loaded because you explicitly told Spring to find it with @PropertySource.
+
+If a property exists in custom.properties but not in application.properties, Spring will find it and use it perfectly.
+
+2. The Priority Rule (Who Wins?)
+The most important thing to understand is Precedence. If you have the same key (e.g., server.port) in both files, Spring Boot has a very specific order for which one "wins."
+
+In a standard Spring Boot setup:
+
+application.properties (and its variants like application-dev.properties) has higher priority.
+
+@PropertySource on a @Configuration class has lower priority.
+
+The Result: If you define my.timeout=5000 in your custom file and my.timeout=1000 in application.properties, the value will be 1000. The application.properties file "overwrites" the @PropertySource values.
+
+3. Comparison of Use Cases
+Feature	application.properties	@PropertySource
+Loading	Automatic (Spring Boot feature)	Manual (Spring Framework feature)
+Priority	High	Low
+YAML Support	Yes (.yml or .yaml)	No (Only .properties or .xml)
+Best Use Case	Main app config, DB credentials, Ports.	Legacy properties, module-specific settings.
+4. Code Example
+If you have this setup:
+
+src/main/resources/application.properties
+
+Properties
+app.name=MainApp
+app.version=1.0
+src/main/resources/extra.properties
+
+Properties
+app.version=2.0-beta
+app.description=This is a legacy module
+Your Configuration Class:
+
+Java
+@Configuration
+@PropertySource("classpath:extra.properties")
+public class AppConfig {
+    // app.name will be "MainApp" (from application.properties)
+    // app.description will be "This is a legacy module" (from extra.properties)
+    // app.version will be "1.0" (application.properties wins the conflict)
+}
+Why this matters for your Upgrade
+Since you are upgrading to Java 17 and likely Spring Boot 2.7+, you should be aware that Spring Boot significantly improved how it handles configuration (the "Config Data API").
+
+If you are trying to resolve that DataSource conflict we discussed earlier, it is usually cleaner to move all database settings into application.properties and remove the @PropertySource annotations entirely. This keeps your configuration in one high-priority place and makes it much easier to debug why certain beans (like your two DataSources) are being created.
+
+If you still see the NoUniqueBeanDefinitionException, it is almost certainly because one DataSource is coming from your code/properties and the other is being "ghost-created" by an old web.xml or an auto-configuration that hasn't been disabled.
+
+After upgraded to Java 17 and Tomcat 10, when start up tomcat and this application, got this error: one filter faileed.
+
+This error in image_931ffa.png is the "smoking gun" of the biggest change in the Java ecosystem in the last decade: the Jakarta EE Namespace Shift.
+
+The error MultipartFilter cannot be cast to jakarta.servlet.Filter happens because Tomcat 10 has moved from the old javax.servlet package to the new jakarta.servlet package. Your version of Spring is still trying to use the old javax classes, and Tomcat 10 doesn't recognize them as valid Filters.
+
+The Root Cause: The "Great Migration"
+Historically, Java Enterprise features lived in the javax.* namespace. When the project moved to the Eclipse Foundation, the name changed to Jakarta EE, and starting with Jakarta EE 9, all package names changed from javax.* to jakarta.*.
+
+Component	Tomcat 9 (and older)	Tomcat 10+
+Specification	Java EE 8 / Jakarta EE 8	Jakarta EE 9 / 10 / 11
+Namespace	javax.servlet.*	jakarta.servlet.*
+Spring Version	Spring Boot 2.x / Spring 5.x	Spring Boot 3.x / Spring 6.x
+How to Fix It
+You have two distinct paths forward. Which one you choose depends on how much code you are willing to refactor right now.
+
+Path A: The "Quick Fix" (Recommended for legacy apps)
+If you want to keep your current code (using javax.servlet and Spring Boot 2.x) but run it on Java 17, simply downgrade your server to Tomcat 9.
+
+Tomcat 9 fully supports Java 17.
+
+Tomcat 9 uses the javax.servlet namespace that your current Spring version expects.
+
+This allows you to enjoy Java 17 performance without rewriting your imports.
+
+Path B: The "Modernization" (The Long-Term Way)
+If you are committed to using Tomcat 10, you must upgrade your entire application stack to be Jakarta-compliant.
+
+Upgrade Spring Boot: Change your parent pom to Spring Boot 3.x (which requires Spring Framework 6).
+
+Find & Replace Imports: You must go through your entire project and change every instance of:
+
+import javax.servlet.*;  ➜  import jakarta.servlet.*;
+
+import javax.annotation.*; ➜ import jakarta.annotation.*;
+
+import javax.persistence.*; ➜ import jakarta.persistence.*;
+
+Update Maven Dependencies: Ensure your dependencies (like Hibernate, Validation, etc.) are the "Jakarta" versions (usually the latest major versions).
+
+Why MultipartFilter specifically failed
+In image_931ffa.png, Tomcat 10 is trying to start the multipartFilter. Because your pom.xml is likely still pulling in an older Spring Web jar, that MultipartFilter class implements javax.servlet.Filter.
+
+Tomcat 10's engine only accepts classes that implements jakarta.servlet.Filter. To the computer, these are completely different, unrelated types—hence the ClassCastException.
+
+Summary Recommendation
+Since your app uses JSP and ExtJS, it is likely a mature application. Upgrading to Spring Boot 3/Jakarta EE can be a "rabbit hole" of breaking changes.
+
+The most stable path for you is:
+
+Keep Java 17.
+
+Use Tomcat 9.
+
+Keep Spring Boot 2.7.x.
+
+This setup is the "sweet spot" for running older Spring apps on modern Java versions without the headache of the Jakarta namespace migration.
+
+Are you using many other javax libraries like JPA/Hibernate or Bean Validation?
+
+this is the configuration in web.xml, is it correct?
+
+Technically, the XML syntax in image_9305b2.png is perfectly valid, but for your specific environment (Tomcat 10), the configuration is logically incorrect and is the direct cause of the crash you saw in the previous step.
+
+Here is the breakdown of why this specific file is failing:
+
+1. The Namespace Conflict
+In image_9305b2.png, you are telling Tomcat 10 to load org.springframework.web.multipart.support.MultipartFilter.
+
+The Problem: In Spring 5.x (and below), this class implements javax.servlet.Filter.
+
+The Reality: Tomcat 10 refuses to run anything that doesn't implement jakarta.servlet.Filter.
+
+This is why your log (image_931ffa.png) explicitly said: MultipartFilter cannot be cast to jakarta.servlet.Filter. Tomcat sees the class, but because it's the "old version" of a Filter, Tomcat doesn't consider it a Filter at all.
+
+2. Is this configuration even needed?
+If you are using Spring Boot, you usually do not need to manually define these in web.xml anymore:
+
+MultipartFilter: Spring Boot typically enables multipart handling automatically via StandardServletMultipartResolver.
+
+HiddenHttpMethodFilter: This is also auto-configured in Spring Boot (though often disabled by default in newer versions; you enable it with spring.mvc.hiddenmethod.filter.enabled=true in application.properties).
+
+How to make it "Correct"
+Depending on which path you choose from my previous response, here is what you should do with this web.xml content:
+
+If you move to Tomcat 9 (The easiest path)
+The configuration in image_9305b2.png will work perfectly as-is. Tomcat 9 speaks the javax language, so it will recognize those Spring classes immediately.
+
+If you stay on Tomcat 10 (The upgrade path)
+Upgrade to Spring Boot 3.x / Spring 6.x: This will provide a new version of MultipartFilter that implements the jakarta interface.
+
+Delete these lines from web.xml: It is better to let Spring Boot manage these filters. If you need to customize them, do it in a Java @Configuration class:
+
+Java
+@Bean
+public FilterRegistrationBean<MultipartFilter> multipartFilterRegistrationBean() {
+    FilterRegistrationBean<MultipartFilter> registrationBean = new FilterRegistrationBean<>();
+    registrationBean.setFilter(new MultipartFilter());
+    registrationBean.addUrlPatterns("/springrest/*");
+    return registrationBean;
+}
+Summary
+The configuration in your image is legacy. It expects an older server environment. Because you have jumped to Tomcat 10, the "language" used by your web.xml (javax) and the "language" spoken by your server (jakarta) no longer match.
+
+Which version of Spring Boot are you currently using in your pom.xml? (This will confirm if you can stay on Tomcat 10 or if you must downgrade to Tomcat 9).
+
+The error in image_92243e.png is the exact same underlying issue we saw with the filter, just appearing at a different stage of the startup process.
+
+This time, the conflict is with the DispatcherServlet, which is the heart of your Spring MVC application. The error DispatcherServlet cannot be cast to jakarta.servlet.Servlet confirms that your Spring version is still looking for javax.servlet, but Tomcat 10 only accepts jakarta.servlet.
+
+Why this is happening (again)
+Every Servlet-based application has a "contract" with the server.
+
+The Contract: For a class to be a "Servlet," it must implement the Servlet interface.
+
+The Conflict: Your current Spring DispatcherServlet implements javax.servlet.Servlet. Tomcat 10 only recognizes classes that implement jakarta.servlet.Servlet.
+
+The Result: Even though the class name is correct, Tomcat 10 sees it as a "foreign object" that doesn't fit the required interface, leading to that ClassCastException.
+
+Your Two Paths (Revisited)
+Since your application uses Java 17, you have reached a fork in the road. You must match your Server version to your Spring version.
+
+Path 1: Downgrade to Tomcat 9 (High Recommendation)
+This is the "Path of Least Resistance."
+
+Why: Tomcat 9 supports Java 17 perfectly but uses the older javax namespace.
+
+Benefit: Your current code, your web.xml (from image_9305b2.png), and all your Spring dependencies will work immediately without any code changes.
+
+Action: Stop Tomcat 10 and install Tomcat 9.0.x.
+
+Path 2: Upgrade to Spring Boot 3.x
+This is the "Modernization Path."
+
+Why: Spring Boot 3.x was rewritten to use the jakarta namespace required by Tomcat 10.
+
+The Work: You will have to change every import javax.servlet.* to import jakarta.servlet.* in your Java code and update your Maven dependencies to their latest versions.
+
+Risk: For an older app using JSPs and ExtJS, this often breaks many third-party libraries that haven't updated to Jakarta yet.
+
+Summary of Compatibility
+Component	Tomcat 9	Tomcat 10
+Java 17 Support	Yes	Yes
+Namespace	javax.*	jakarta.*
+Spring Version	Spring Boot 2.x (Spring 5)	Spring Boot 3.x (Spring 6)
+Your Current Code	Compatible	Incompatible
+Next Step
+To give you the exact steps for your pom.xml, could you check which version of Spring Boot you are currently using? If it starts with a 2 (e.g., 2.7.18), you should definitely switch to Tomcat 9.
+
+web.xml
+
+The configuration shown in image_921cfb.png is the manual "heart" of your Spring MVC application. It defines the DispatcherServlet, which acts as the main entry point for all web requests.
+
+However, just like the Filter in your previous error, this configuration is currently dead on arrival in Tomcat 10 because of the javax vs. jakarta conflict shown in image_92243e.png.
+
+Analysis of the Configuration
+<servlet-class>: You are using org.springframework.web.servlet.DispatcherServlet. In your current version of Spring, this class implements javax.servlet.Servlet. Tomcat 10 refuses to load it because it expects jakarta.servlet.Servlet.
+
+AnnotationConfigWebApplicationContext: This tells Spring that instead of looking for an XML file like dispatcher-servlet.xml, it should look for a Java class to configure itself.
+
+contextConfigLocation: Your app is looking for a class named TestWebConfigurer to define your beans, view resolvers (for JSPs), and ExtJS endpoints.
+
+The Final Verdict: How to resolve the crash
+You have two choices to fix the ClassCastException from image_92243e.png.
+
+Choice A: The "Tomcat 9" Fix (Easiest)
+If you do not want to rewrite your code, downgrade your server to Tomcat 9.
+
+Tomcat 9 supports Java 17.
+
+Tomcat 9 uses javax.*, so your web.xml in image_921cfb.png will work perfectly.
+
+You don't have to change a single line of code.
+
+Choice B: The "Spring Boot 3" Fix (Hardest)
+If you insist on using Tomcat 10, you must modernize the entire app.
+
+Upgrade Pom: Change Spring Boot version to 3.x.
+
+Replace web.xml: In a modern Spring Boot app, you should delete the web.xml shown in image_921cfb.png entirely.
+
+Move to Java Config: Move the configuration to your SpringBootServletInitializer class.
+
+Compatibility Chart (Java 17 Focus)
+If you use...	Server must be...	web.xml status	Code Imports
+Spring Boot 2.x	Tomcat 9	Works perfectly	javax.servlet.*
+Spring Boot 3.x	Tomcat 10	Must be deleted	jakarta.servlet.*
+A Note on your "Embedded Tomcat" Goal
+You originally asked about running this with Embedded Tomcat. If you choose Spring Boot 3 with Embedded Tomcat 10, your JSPs (from ExtJS) may require additional work because Spring Boot 3 has tightened security and rendering rules for JSPs.
+
+My Peer Recommendation: Switch to Tomcat 9.0.x. It is the most stable way to run an existing Java 8 / JSP / ExtJS app on Java 17 without spending weeks refactoring namespaces.
+
+Which version of Spring Boot is currently listed in your pom.xml? (e.g., <version>2.7.x</version>)
+
+The versions you've shared in image_91ac7d.png are exactly correct for a Tomcat 10 environment. By using Spring Boot 3.2.5 and Spring 6.1.6, you have officially stepped into the Jakarta EE era.
+
+However, the reason you are still seeing those ClassCastException errors (from image_92243e.png and image_931ffa.png) is that your source code and metadata are likely still speaking the old "javax" language while your libraries are speaking "jakarta."
+
+Think of it like this: You've upgraded the engine (Spring 6) and the fuel (Tomcat 10), but the steering wheel (your code) is still designed for a different car.
+
+Why the error persists
+Even though your pom.xml pulls in the Jakarta-compatible version of the DispatcherServlet, the JVM is getting confused. This usually happens for one of three reasons:
+
+Legacy Imports: Your Java classes (like TestWebConfigurer or any custom Filters) still have import javax.servlet.*; at the top.
+
+Web.xml Schema: Your web.xml header (the <web-app> tag) likely still points to the old java.sun.com or jcp.org schemas.
+
+Dirty Build: Old javax-based Spring JARs might still be lingering in your target folder or WEB-INF/lib from a previous build.
+
+The Jakarta Migration Checklist
+To fix the "cannot be cast to jakarta.servlet" error, you must perform these three steps:
+
+1. The "Great Search and Replace"
+You must search your entire project for the string javax.servlet and replace it with jakarta.servlet.
+
+Old: import javax.servlet.http.HttpServletRequest;
+
+New: import jakarta.servlet.http.HttpServletRequest;
+
+Note: You may also need to change javax.persistence to jakarta.persistence and javax.annotation to jakarta.annotation if you use those.
+
+2. Update the web.xml Header
+If you choose to keep your web.xml (shown in image_921cfb.png), the header must be updated to the Jakarta EE 10 version. Tomcat 10 will struggle to process a web.xml that uses the old 3.1 or 4.0 schema.
+
+Replace your <web-app> tag with this:
+
+XML
+<web-app xmlns="https://jakarta.ee/xml/ns/jakartaee"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee
+                      https://jakarta.ee/xml/ns/jakartaee/web-app_6_0.xsd"
+  version="6.0">
+3. Clean your Classpath
+Legacy JARs are the #1 cause of ClassCastException.
+
+Run mvn clean to wipe out the target folder.
+
+If you are deploying to an external Tomcat, delete the old deployment folder in Tomcat's webapps/ directory before dropping in the new WAR.
+
+A Better Way for Spring Boot 3
+Since you are now using Spring Boot 3.2.5, you actually don't need the web.xml configuration from image_921cfb.png anymore. Spring Boot can auto-detect your TestWebConfigurer if you annotate it correctly.
+
+If TestWebConfigurer implements WebMvcConfigurer, you can simply annotate it with @Configuration and Spring Boot will find it automatically, removing the need to manually define the DispatcherServlet in XML.
+
+Quick Check: If you search your source code for the word javax.servlet, does it return any results?
+
+Can I just remove web.xml ？
+
+Yes, you can—and in a Spring Boot 3 project, you absolutely should remove it.
+
+By removing web.xml, you eliminate the primary source of the javax vs. jakarta namespace conflicts that are causing your crashes. Spring Boot is designed to handle servlet container initialization programmatically via Java code instead of legacy XML files.
+
+Here is how you migrate the logic currently living in your web.xml into your Java code.
+
+1. Replace the DispatcherServlet (from image_921cfb.png)
+In your web.xml, you manually defined the DispatcherServlet and pointed it to TestWebConfigurer. In Spring Boot, this is handled automatically.
+
+The Spring Boot Way: If your TestWebConfigurer class is annotated with @Configuration and is in a package scanned by your @SpringBootApplication class, Spring Boot will find it and use it automatically.
+
+The Entry Point: Ensure your main application class looks like this:
+
+Java
+@SpringBootApplication
+public class MyWebApplication extends SpringBootServletInitializer {
+
+    @Override
+    protected SpringApplicationBuilder configure(SpringApplicationBuilder builder) {
+        // This replaces the <init-param> for contextConfigLocation
+        return builder.sources(MyWebApplication.class, TestWebConfigurer.class);
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(MyWebApplication.class, args);
+    }
+}
+2. Replace the Filters (from image_9305b2.png)
+You have multipartFilter and httpMethodFilter defined in XML. You can replace these with @Bean definitions in a configuration class (like your TestWebConfigurer).
+
+Java
+@Configuration
+public class FilterConfig {
+
+    @Bean
+    public FilterRegistrationBean<MultipartFilter> multipartFilter() {
+        FilterRegistrationBean<MultipartFilter> registrationBean = new FilterRegistrationBean<>();
+        registrationBean.setFilter(new MultipartFilter());
+        // Matches the <url-pattern> from your image_9305b2.png
+        registrationBean.addUrlPatterns("/springrest/*"); 
+        return registrationBean;
+    }
+
+    @Bean
+    public FilterRegistrationBean<HiddenHttpMethodFilter> httpMethodFilter() {
+        FilterRegistrationBean<HiddenHttpMethodFilter> registrationBean = new FilterRegistrationBean<>();
+        registrationBean.setFilter(new HiddenHttpMethodFilter());
+        registrationBean.addUrlPatterns("/springrest/*");
+        return registrationBean;
+    }
+}
+Important: When you move this to Java code, your IDE will help you fix the imports. Ensure they all start with jakarta.servlet, not javax.servlet.
+
+3. What about the JNDI Resource (from image_2e82fb.png)?
+If you still have the <resource-ref> for jdbc/test in your web.xml, you should move that to your application.properties as well:
+
+Properties
+# Tell Spring Boot to look up the DataSource from Tomcat's JNDI
+spring.datasource.jndi-name=java:comp/env/jdbc/test
+This allows you to keep your database configuration in Tomcat's context.xml while removing the need for web.xml entirely.
+
+Why this is the "Final Fix"
+When you remove web.xml, Tomcat 10 no longer tries to parse legacy XML tags or load classes based on old javax specifications. Instead:
+
+Tomcat starts and looks for a WebApplicationInitializer (which SpringBootServletInitializer provides).
+
+Spring Boot starts and uses its Jakarta-compliant libraries to register the DispatcherServlet and Filters.
+
+The ClassCastException disappears because everything is now using the same jakarta.* interfaces.
+
+Summary Checklist
+Delete src/main/webapp/WEB-INF/web.xml.
+
+Verify TestWebConfigurer uses jakarta.servlet imports.
+
+Ensure your main class extends SpringBootServletInitializer.
+
+Run mvn clean package to ensure no old files are left in the build.
+
+Once you delete the file and clean the project, does the application finally start up without the casting error?
+
+I removed the web.xm, tomcat started successfully, but when I tried to open web applicaiton , it shows http 404 not found. I guess it can not find this configuration which was in web.xml before I removed web.xml/
+
+Getting a 404 Not Found after removing web.xml is actually a "good" sign—it means Tomcat is running and your app deployed without crashing. The 404 just means Tomcat has no idea where to send your web requests because the DispatcherServlet (the "traffic cop" for your Spring app) wasn't started.
+
+In image_87499c.png, you had explicitly told Tomcat to load TestWebConfigurer. Without web.xml, you need to tell Spring Boot to perform that registration programmatically.
+
+1. The Missing Link: SpringBootServletInitializer
+To make a WAR work in an external Tomcat without a web.xml, your main class must extend SpringBootServletInitializer. This is the class that Tomcat looks for to know how to start your Spring context.
+
+Update your main class like this:
+
+Java
+@SpringBootApplication
+// Must extend this class for external Tomcat to find your config
+public class MyWebApplication extends SpringBootServletInitializer {
+
+    @Override
+    protected SpringApplicationBuilder configure(SpringApplicationBuilder builder) {
+        // This replaces the contextConfigLocation param from image_87499c.png
+        // It tells Spring to include TestWebConfigurer in the startup
+        return builder.sources(MyWebApplication.class, TestWebConfigurer.class);
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(MyWebApplication.class, args);
+    }
+}
+2. Verify TestWebConfigurer Annotations
+Since you are no longer using the AnnotationConfigWebApplicationContext entry from image_87499c.png, Spring needs to "see" your config class.
+
+Ensure TestWebConfigurer is annotated with @Configuration. If it handles your MVC logic (like View Resolvers for JSPs), it should look something like this:
+
+Java
+@Configuration
+@EnableWebMvc
+@ComponentScan(basePackages = "com.yourproject")
+public class TestWebConfigurer implements WebMvcConfigurer {
+    // Your JSP view resolver and other bean definitions here
+}
+3. Check the Context Path
+When you deploy to an external Tomcat, the URL usually includes the name of your WAR file.
+
+If your file is named myapp.war, the URL is http://localhost:8080/myapp/.
+
+If you want it to be at the "root" (just http://localhost:8080/), you must rename your war file to ROOT.war before putting it in Tomcat's webapps folder.
+
+Why this fixes the 404
+When Tomcat starts a WAR without web.xml:
+
+It scans the WAR for any class implementing ServletContainerInitializer.
+
+Spring Boot provides one that looks for your SpringBootServletInitializer.
+
+The configure() method runs, which loads TestWebConfigurer.
+
+Spring Boot then registers the DispatcherServlet automatically for you at the / mapping.
+
+One quick check: Look at your Tomcat console logs (catalina.out). Do you see a line that says Mapping servlet: 'dispatcherServlet' to [/]? If you don't see that line, the configure method above isn't being called correctly.
+
+Does your main class already extend SpringBootServletInitializer?
+
+How to run Spring Web Application using maven commad line like "mvn tomcat10:run"?
+
+To run your application from the command line using Maven, you have a few different options depending on how your project is structured.
+
+However, using a command like mvn tomcat10:run directly can be problematic because there is no official Apache Tomcat 10 Maven plugin. The legacy tomcat7-maven-plugin was abandoned years ago and never officially modernized for Tomcat 10 or the jakarta namespace.
+
+Fortunately, since you are using Spring Boot 3.2.5 (as seen in image_91ac7d.png), you don't need a legacy Tomcat plugin. Here are the correct ways to run your app from the command line:
+
+Option 1: The Spring Boot Way (Highly Recommended)
+Even if your project is packaged as a .war file for external deployment, Spring Boot allows you to run it locally using its embedded Tomcat 10 engine via the command line. This is the absolute easiest method.
+
+Run this command in your project root (where pom.xml lives):
+
+Bash
+mvn spring-boot:run
+Why this works perfectly:
+
+It reads your dependencies directly from your pom.xml.
+
+It uses the exact version of Tomcat 10 managed by Spring Boot 3.2.5.
+
+It completely bypasses the need for any complex Maven plugin setups.
+
+Option 2: The Smart Tomcat Plugin (Smart Tomcat)
+If you want a Maven plugin that explicitly boots up an external Tomcat 10 instance right from your command line without building a WAR file manually every time, you should use the Smart Tomcat plugin by Changlu. It is actively maintained and supports Tomcat 10.
+
+Step 1: Add the plugin to your pom.xml
+Add this to your <build><plugins> section:
+
+XML
+<plugin>
+    <groupId>org.codehaus.mojo</groupId>
+    <artifactId>smart-tomcat-maven-plugin</artifactId>
+    <version>4.8.1</version> <configuration>
+        <tomcatHome>/path/to/your/apache-tomcat-10.1.55</tomcatHome>
+        <path>/</path>
+        <port>8080</port>
+    </configuration>
+</plugin>
+Step 2: Run the command
+Once configured, you can launch it using:
+
+Bash
+mvn smart-tomcat:run
+Option 3: The Cargo Plugin (The Enterprise Standard)
+If you need to test deployment to an actual, independent Tomcat 10 instance via Maven, the standard tool is Codehaus Cargo. It downloads, configures, and runs a Tomcat instance for you dynamically.
+
+Step 1: Add Cargo to your pom.xml
+XML
+<plugin>
+    <groupId>org.codehaus.cargo</groupId>
+    <artifactId>cargo-maven3-plugin</artifactId>
+    <version>1.10.13</version>
+    <configuration>
+        <container>
+            <containerId>tomcat10x</containerId>
+            <type>embedded</type>
+        </container>
+        <configuration>
+            <properties>
+                <cargo.servlet.port>8080</cargo.servlet.port>
+            </properties>
+        </configuration>
+    </configuration>
+</plugin>
+Step 2: Run the command
+Bash
+mvn cargo:run
+Summary: Which should you choose?
+If you just want to write code, test endpoints quickly, and debug: Use mvn spring-boot:run. It is native, fast, and doesn't require extra configuration blocks in your POM.
+
+If you want to strictly simulate how the app behaves inside a local standalone Tomcat folder setup: Use mvn smart-tomcat:run.
+
+Did mvn spring-boot:run boot up smoothly, or are you running into issues with your configuration classes during execution?
+
+The good news is that your application successfully started! The log line Started FlowConfigurationServiceApplication in 8.622 seconds confirms that mvn spring-boot:run did its job perfectly.
+
+The error you are seeing—java.io.IOException: Found an plain text HTTP request on what should be an encrypted TLS connection—is a very common browser-to-server miscommunication.
+
+What the Error Means
+Your Spring Boot application is currently configured to require HTTPS (SSL/TLS encryption) for web traffic.
+
+However, when you tried to open the web application, you (or your browser) sent a standard HTTP (plain text) request. The Tomcat server received the plain text, realized it wasn't encrypted, and immediately rejected the connection with this handshake error.
+
+How to Fix It
+You have two simple ways to resolve this, depending on what you want to achieve locally:
+
+Fix 1: Change your browser URL (The Fastest Way)
+Simply change the URL you are typing into your browser to use https:// instead of http://.
+
+Instead of: http://localhost:20000 (assuming your port is 20000 based on the io-20000 thread name in the log)
+
+Use: https://localhost:20000
+
+Note: Since you are running locally, your browser will likely show a warning that "Your connection is not private" because it's a local self-signed certificate. You can safely click "Advanced" and "Proceed to localhost".
+
+Fix 2: Disable SSL for local development
+If you don't want to deal with HTTPS warnings while testing locally, you can temporarily disable SSL in your Spring Boot configuration.
+
+Open your application.properties (or application.yml) and look for the SSL settings. You likely have a property turning it on. You can disable it like this:
+
+Properties
+server.ssl.enabled=false
+(If you do this, you will then access the site using the standard http://localhost:20000 URL).
+
+what is the default port number when run this command " mvn spring-boot:run"
+
+By default, the standard port for any out-of-the-box Spring Boot application running mvn spring-boot:run is 8080.
+
+However, based on the console logs you just shared, your specific application is configured to use port 20000.
+
+We can see this directly in the thread identifier from your error log: [io-20000-exec-1]. The 20000 embedded in that thread name represents the active network port Tomcat bound itself to at startup.
+
+Where is this port defined?
+If you want to verify or change this number, look inside your project's configuration files (usually found in src/main/resources/).
+
+1. In application.properties
+Look for a line that overrides the default 8080 port:
+
+Properties
+server.port=20000
+2. In application.yml
+It would look like this:
+
+YAML
+server:
+  port: 20000
+Accessing your App Right Now
+Because your application is using port 20000 and has SSL/TLS security active, the correct URL to type into your browser to hit this application is:
+
+https://localhost:20000/
+
+this application uses jsp for view , when open localhost:8080/.../ after command line "mvn spring-boot:run", it downloads a jsp file but can not open it'
+
+Ah, the classic JSP trap in Spring Boot!
+
+When your browser downloads the .jsp file instead of rendering it as a webpage, it means the server sent the raw file back as plain text. This happens because Spring Boot's embedded Tomcat doesn't know how to compile JSPs by default. Unlike an external standalone Tomcat installation, Spring Boot's standard embedded starter jars explicitly leave out the JSP compiler engine (Jasper) to keep the application lightweight.
+
+To fix this so that Spring Boot correctly compiles your JSPs on the fly, you need to add a couple of missing pieces to your pom.xml.
+
+Step 1: Add the Tomcat Jasper Dependency
+Open your pom.xml and add the dependency for the Tomcat embedding compiler. Since you are using Spring Boot 3.2.5 and Tomcat 10.1.55, you must use the newer jakarta version of Jasper:
+
+XML
+<dependency>
+    <groupId>org.glassfish.web</groupId>
+    <artifactId>jakarta.servlet.jsp.jstl</artifactId>
+    <version>3.0.1</version>
+</dependency>
+<dependency>
+    <groupId>org.apache.tomcat.embed</groupId>
+    <artifactId>tomcat-embed-jasper</artifactId>
+    <scope>provided</scope>
+</dependency>
+⚠️ Why provided scope? Using <scope>provided</scope> ensures that when you run mvn spring-boot:run locally, the compiler is available to render your JSPs. However, when you package it as a .war file for your external production Tomcat, it won't bundle these files (because your external Tomcat already has its own Jasper compiler!).
+
+Step 2: Structure Your JSP Directory Correctly
+Spring Boot's embedded server is very strict about where it looks for files. JSPs cannot be placed inside src/main/resources/templates (where Thymeleaf or HTML files go).
+
+They must be inside the legacy web-app structure:
+
+Plaintext
+my-project/
+ ├── src/
+ │    └── main/
+ │         ├── java/
+ │         ├── resources/
+ │         └── webapp/              <-- Must be here!
+ │              └── WEB-INF/
+ │                   └── jsp/
+ │                        └── index.jsp
+ └── pom.xml
+Step 3: Configure the View Resolver
+Ensure your Spring Boot configuration knows where to look for those files and what extension to expect. Add these lines to your src/main/resources/application.properties file:
+
+Properties
+
+
+spring.mvc.view.prefix=/WEB-INF/jsp/
+spring.mvc.view.suffix=.jsp
+
+
+mvn clean spring-boot:run
+     
+
+
+     
