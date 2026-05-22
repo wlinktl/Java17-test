@@ -1,17 +1,34 @@
 initComponent: function() {
     console.log('initComponent:');
     
-    var a = this;
-    
-    // Attempt to identify the component by name, itemId, or id
-    var componentName = a.name || a.itemId || a.id || 'Unknown Component';
+    var a = this
+      , c = a.width
+      , b = a.height;
+      
+    // --- Added Debugging Logic ---
+    var componentName = a.name || a.itemId || a.id || 'Unknown';
     var isDisabled = a.disabled ? 'Disabled' : 'Enabled';
     
-    console.log('Initializing:', componentName, '| Current State:', isDisabled);
-
-    , c = a.width
-    , b = a.height;
+    var logMsg = 'Initializing: ' + componentName + ' | State: ' + isDisabled;
     
+    // Check if the component is a button (or has button-like properties)
+    if ((a.isXType && a.isXType('button')) || a.xtype === 'button' || a.xtype === 'menuitem') {
+        var btnLabel = a.text || 'No Label';
+        
+        // Tooltips in ExtJS can sometimes be a string, or a configuration object
+        var btnTooltip = 'No Tooltip';
+        if (typeof a.tooltip === 'string') {
+            btnTooltip = a.tooltip;
+        } else if (a.tooltip && a.tooltip.text) {
+            btnTooltip = a.tooltip.text;
+        }
+        
+        logMsg += ' | Label: "' + btnLabel + '" | Tooltip: "' + btnTooltip + '"';
+    }
+    
+    console.log(logMsg);
+    // -----------------------------
+
     if (a.plugins && !a.plugins.processed) {
         a.constructPlugins()
     }
@@ -23,24 +40,3 @@ initComponent: function() {
         a.on(a.listeners);
     }
 }
-
-
-
-
-
-
-
-shouldButtonBeVisible: function() {
-    var a = this;
-    
-    // Log the entire component object to the console so you can inspect it
-    console.log('****** Debugging Component Instance:', a);
-    
-    // Also try checking common identifiers
-    console.log('ID:', a.id, '| ItemID:', a.itemId, '| Reference:', a.reference, '| XType:', a.getXType());
-    
-    if (a.autoHide && !a.menu.isVisible() && !a.fieldInFocus && !a.operatorButtonEl.hasCls(a.operatorButtonCls + '-mouse-over-button') && !a.operatorButtonEl.hasCls(a.operatorButtonCls + '-mouse-over-input')) {
-        return !1;
-    }
-    return !0;
-},
