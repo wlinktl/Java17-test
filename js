@@ -1,3 +1,35 @@
+initComponent: function() {
+    console.log('initComponent:');
+    
+    var a = this;
+    
+    // Attempt to identify the component by name, itemId, or id
+    var componentName = a.name || a.itemId || a.id || 'Unknown Component';
+    var isDisabled = a.disabled ? 'Disabled' : 'Enabled';
+    
+    console.log('Initializing:', componentName, '| Current State:', isDisabled);
+
+    , c = a.width
+    , b = a.height;
+    
+    if (a.plugins && !a.plugins.processed) {
+        a.constructPlugins()
+    }
+    a.pluginsInitialized = !0;
+    if (c != null || b != null) {
+        a.setSize(c, b)
+    }
+    if (a.listeners) {
+        a.on(a.listeners);
+    }
+}
+
+
+
+
+
+
+
 shouldButtonBeVisible: function() {
     var a = this;
     
