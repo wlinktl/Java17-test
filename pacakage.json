@@ -1,0 +1,130 @@
+{
+  "name": "insight",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "node --max-old-space-size=20048 ./node_modules/@angular/cli/bin/ng serve --port 4401",
+    "migrate-sass": "sass-migrator division **/*.scss",
+    "build": "node --max-old-space-size=20024 ./node_modules/@angular/cli/bin/ng build --aot=true --source-map=false --named-chunks=true --output-hashing=none",
+    "build:prod": "node --max-old-space-size=10024 ./node_modules/@angular/cli/bin/ng build --configuration production",
+    "test": "node --max-old-space-size=10024 ./node_modules/@angular/cli/bin/ng test --watch=false --code-coverage",
+    "lint": "ng lint",
+    "e2e": "ng e2e"
+  },
+  "lint-staged": {
+    "src/**/*.{js,ts,json,md,scss,html}": [
+      "git add"
+    ]
+  },
+  "husky": {
+    "hooks": {
+      "pre-push": "echo \"[Build Phase] Local Build started...\" && npm run build",
+      "post-push": "echo \"[Build Phase] Local Build Successful...\""
+    }
+  },
+  "browser": {
+    "fs": false
+  },
+  "private": true,
+  "browserslist": [
+    "defaults",
+    "not > 0.5%",
+    "not last 2 versions",
+    "not Firefox ESR",
+    "not dead",
+    "not IE 9-11"
+  ],
+  "overrides": {
+    "caniuse-lite": "^1.0.30001757"
+  },
+  "dependencies": {
+    "@angular/animations": "18.2.8",
+    "@angular/common": "18.2.8",
+    "@angular/compiler": "18.2.8",
+    "@angular/core": "18.2.8",
+    "@angular/forms": "18.2.8",
+    "@angular/platform-browser": "18.2.8",
+    "@angular/platform-browser-dynamic": "18.2.8",
+    "@angular/router": "18.2.8",
+    "@juggle/resize-observer": "3.3.1",
+    "@materia-ui/ngx-monaco-editor": "^6.0.0",
+    "@stomp/stompjs": "5.4.4",
+    "ag-grid-angular": "^31.0.0",
+    "ag-grid-community": "^31.0.0",
+    "ag-grid-enterprise": "^31.0.0",
+    "antlr4": "4.9.0",
+    "antlr4ts": "0.5.0-alpha.4",
+    "assert": "2.1.0",
+    "cytoscape": "3.30.4",
+    "cytoscape-expand-collapse": "4.1.0",
+    "cytoscape-klay": "3.1.4",
+    "cytoscape-navigator": "2.0.1",
+    "cytoscape-node-html-label": "1.2.2",
+    "d3": "7.8.5",
+    "diff2html": "3.4.45",
+    "echarts": "5.1.2",
+    "exceljs": "^4.4.0",
+    "file-saver": "^2.0.5",
+    "html-to-image": "~1.11.13",
+    "jspdf": "~3.0.2",
+    "karma-coverage": "^2.2.1",
+    "lodash": "4.17.15",
+    "mobx": "6.12.0",
+    "mobx-angular": "4.7.2",
+    "moment": "2.24.0",
+    "moment-timezone": "0.5.25",
+    "monaco-editor": "0.36.1",
+    "ngx-echarts": "17.1.0",
+    "ngx-monaco-editor": "^5.0.0",
+    "rxjs": "6.6.7",
+    "rxjs-compat": "6.5.3",
+    "sockjs-client": "1.4.0",
+    "tslib": "2.0.0",
+    "underscore": "1.13.7",
+    "util": "0.12.5",
+    "uuid": "8.1.0",
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0",
+    "zone.js": "0.14.10"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "18.2.8",
+    "@angular/cdk": "18.2.8",
+    "@angular/cli": "18.2.8",
+    "@angular/compiler-cli": "18.2.8",
+    "@angular/language-service": "18.2.8",
+    "@ckeditor/ckeditor5-angular": "~10.0.0",
+    "@types/echarts": "4.9.10",
+    "@types/jasmine": "3.6.0",
+    "@types/jasminewd2": "2.0.3",
+    "@types/moment-timezone": "0.5.13",
+    "@types/node": "12.11.1",
+    "@types/sockjs-client": "1.1.1",
+    "@types/stompjs": "2.3.4",
+    "@types/underscore": "1.13.0",
+    "ckeditor5": "~46.0.0",
+    "codelyzer": "6.0.0",
+    "husky": "4.3.8",
+    "jasmine-core": "3.6.0",
+    "jasmine-spec-reporter": "5.0.0",
+    "karma": "6.4.1",
+    "karma-chrome-launcher": "3.1.0",
+    "karma-coverage-istanbul-reporter": "3.0.2",
+    "karma-jasmine": "4.0.0",
+    "karma-jasmine-html-reporter": "1.5.0",
+    "lint-staged": "11.0.0",
+    "prettier": "2.3.0",
+    "pretty-quick": "3.1.0",
+    "prismjs": "1.28.0",
+    "protractor": "7.0.0",
+    "resize-observer-polyfill": "1.5.1",
+    "sass-migrator": "1.7.1",
+    "ts-node": "7.0.0",
+    "tslint": "6.1.0",
+    "tslint-config-prettier": "1.18.0",
+    "typescript": "5.4.5"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "*"
+  }
+}
